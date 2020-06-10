@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](https://github.com/kokonak/SlidingPuzzleView/blob/master/LICENSE)
 
 ## About
+![](sample_image.gif)
 - Custom graph UI.
 - used UICollectionView.
 - Index starts from the right.
