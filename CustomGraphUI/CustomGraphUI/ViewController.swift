@@ -8,109 +8,116 @@
 
 import UIKit
 
-private let cellIdentifier: String = "graphCellIdentifier"
-class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, GraphCellDelegate {
-    
-    private let collectionView: UICollectionView = UICollectionView(frame: CGRect.zero, collectionViewLayout: UICollectionViewFlowLayout())
-    private let itemWidth: CGFloat = 80
-    private let itemHeight: CGFloat = 300
+final class ViewController: UIViewController {
 
-    private var itemList: [(value: CGFloat, text: String)] = [
-        (0.5, "50%"), (0.2, "20%"), (0.7, "70%"), (0.25, "25%"), (0.85, "85%"),
-        (1, "100%"), (0.2, "20%"), (0.7, "70%"), (0, "0%"), (0.85, "85%"),
-    ]
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        // Do any additional setup after loading the view.
-        self.view.backgroundColor = UIColor.white
-        
-        self.initElements()
-        self.reloadData()
-    }
-    
-    private func initElements() {
-        let flowLayout = self.collectionView.collectionViewLayout as! UICollectionViewFlowLayout
-        flowLayout.itemSize = CGSize(width: self.itemWidth, height: self.itemHeight)
+    private let cellIdentifier: String = "graphCellIdentifier"
+    private let itemSize: CGSize = CGSize(width: 80, height: 200)
+
+    private lazy var flowLayout: UICollectionViewFlowLayout = {
+        let flowLayout = UICollectionViewFlowLayout()
+        flowLayout.itemSize = itemSize
         flowLayout.minimumLineSpacing = 0
         flowLayout.minimumInteritemSpacing = 0
         flowLayout.scrollDirection = .horizontal
         flowLayout.sectionInset = UIEdgeInsets.zero
-        self.collectionView.delegate = self
-        self.collectionView.dataSource = self
-        self.collectionView.backgroundColor = UIColor.white
-        self.collectionView.register(GraphCell.self, forCellWithReuseIdentifier: cellIdentifier)
-        self.collectionView.alwaysBounceHorizontal = true
-        self.collectionView.showsHorizontalScrollIndicator = false
-        self.view.addSubview(self.collectionView)
-        
-        self.collectionView.transform = CGAffineTransform(rotationAngle: .pi)
-    }
+        return flowLayout
+    }()
+
+    private lazy var collectionView: UICollectionView = {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: flowLayout)
+        collectionView.register(GraphCell.self, forCellWithReuseIdentifier: cellIdentifier)
+        collectionView.delegate = self
+        collectionView.dataSource = self
+        collectionView.alwaysBounceHorizontal = true
+        collectionView.showsHorizontalScrollIndicator = false
+        collectionView.transform = CGAffineTransform(rotationAngle: .pi)
+        return collectionView
+    }()
+
+    private var items: [CGFloat] = [0.5, 0.2, 0.7, 0.25, 0.85, 1, 0.7, 0.2]
     
-    override func viewWillLayoutSubviews() {
-        super.viewWillLayoutSubviews()
-        
-        let frame = self.view.frame
-        self.collectionView.frame = CGRect(x: 0, y: 100, width: frame.width, height: self.itemHeight)
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // Do any additional setup after loading the view.
+
+        setupUI()
+        reloadData()
+    }
+
+    private func setupUI() {
+        view.backgroundColor = .white
+
+        view.addSubview(collectionView)
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
+        collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor).isActive = true
+        collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor).isActive = true
+        collectionView.heightAnchor.constraint(equalToConstant: 300).isActive = true
+
+        view.layoutIfNeeded()
     }
     
     private func reloadData() {
-        let itemsWidth: CGFloat = self.itemWidth * CGFloat(self.itemList.count)
-        
-        let flowLayout = self.collectionView.collectionViewLayout as! UICollectionViewFlowLayout
-        let inset: CGFloat = self.view.frame.width - itemsWidth
-        if inset > 0 {
-            // for cell center alignment
-            flowLayout.sectionInset = UIEdgeInsets(top: 0, left: inset/2, bottom: 0, right: inset/2)
+        let itemsWidth: CGFloat = itemSize.width * CGFloat(items.count)
+        let remainWidth: CGFloat = collectionView.frame.width - itemsWidth
+
+        let sectionInset: UIEdgeInsets
+        if remainWidth > 0 {
+            sectionInset = UIEdgeInsets(top: 0, left: remainWidth/2, bottom: 0, right: remainWidth/2)
+        } else {
+            sectionInset = .zero
         }
-        else {
-            flowLayout.sectionInset = UIEdgeInsets.zero
-        }
-        self.collectionView.reloadData()
+        flowLayout.sectionInset = sectionInset
+        collectionView.reloadData()
     }
     
     private func loadMore() {
-        if self.itemList.count >= 15 {
-            return
-        }
+        guard items.count < 15 else { return }
 
-        var indexPaths: [IndexPath] = []
-        for _ in 0..<5 {
-            let value: Int = Int(arc4random_uniform(100))
-            indexPaths.append(IndexPath(row: self.itemList.count, section: 0))
-            self.itemList.append((value: CGFloat(value) * 0.01, text: "\(value)%"))
-        }
-        self.collectionView.insertItems(at: indexPaths)
+        let newItems: [CGFloat] = (0..<5).map { _ in CGFloat(arc4random_uniform(100))/100 }
+        let indexPaths: [IndexPath] = (items.count..<items.count + newItems.count).map { IndexPath(row: $0, section: 0) }
+        items += newItems
+        collectionView.insertItems(at: indexPaths)
     }
-    
+}
+
+// MARK: - UICollectionViewDelegate, UICollectionViewDataSource
+extension ViewController: UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        return self.itemList.count
+        items.count
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell: GraphCell = collectionView.dequeueReusableCell(withReuseIdentifier: cellIdentifier, for: indexPath) as! GraphCell
-        cell.delegate = self
-        
-        if indexPath.row == self.itemList.count - 1 {
-            self.loadMore()
+        let dequeueCell = collectionView.dequeueReusableCell(withReuseIdentifier: cellIdentifier, for: indexPath)
+        guard let cell = dequeueCell as? GraphCell,
+              let item = items[safe: indexPath.row]
+        else {
+            return GraphCell()
         }
-        
-        let item = self.itemList[indexPath.row]
-        let prevValue: CGFloat? = self.itemList[item: indexPath.row - 1] == nil ? nil : self.itemList[indexPath.row - 1].value
-        let nextValue: CGFloat? = self.itemList[item: indexPath.row + 1] == nil ? nil : self.itemList[indexPath.row + 1].value
 
-        cell.setGraphValue(prevValue, item.value, nextValue, item.text)
-
+        let prevValue: CGFloat? = items[safe: indexPath.row - 1]
+        let nextValue: CGFloat? = items[safe: indexPath.row + 1]
+        cell.delegate = self
+        cell.setGraphValue(prevValue, item, nextValue)
         return cell
     }
-    
+
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
+        flowLayout.itemSize
+    }
+}
+
+// MARK: - GraphCellDelegate
+extension ViewController: GraphCellDelegate {
+
     func didSelected(_ cell: GraphCell) {
-        for visibleCell in self.collectionView.visibleCells {
+        for visibleCell in collectionView.visibleCells {
             visibleCell.isSelected = false
         }
         cell.isSelected = true
-        if let indexPath: IndexPath = self.collectionView.indexPath(for: cell) {
-            self.collectionView.selectItem(at: indexPath, animated: false, scrollPosition: .bottom)
+        if let indexPath: IndexPath = collectionView.indexPath(for: cell) {
+            collectionView.selectItem(at: indexPath, animated: false, scrollPosition: .bottom)
         }
     }
 }

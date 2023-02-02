@@ -8,179 +8,162 @@
 
 import UIKit
 
+protocol GraphCellDelegate: AnyObject {
 
-protocol GraphCellDelegate {
     func didSelected(_ cell: GraphCell)
 }
 
-class GraphCell: UICollectionViewCell {
-    private let containerView: UIView = UIView()
-    private let prevLineLayer: CAShapeLayer = CAShapeLayer()
-    private let nextLineLayer: CAShapeLayer = CAShapeLayer()
-    
-    private let markLayer: CAShapeLayer = CAShapeLayer()
-    private let selectButton: UIButton = UIButton()
-    
-    private let animationLayer1: CAShapeLayer = CAShapeLayer()
-    private let animationLayer2: CAShapeLayer = CAShapeLayer()
+final class GraphCell: UICollectionViewCell {
 
-    
-    private let textLabel: UILabel = UILabel()
-    
-    private var prevValue: CGFloat? = nil
-    private var nextValue: CGFloat? = nil
-    private var currentValue: CGFloat = 0
-    
-    private let margin: CGFloat = 10
-    private let markWidth: CGFloat = 10
-    
-    private let lineColor: UIColor = UIColor.red.withAlphaComponent(0.2)
-    
-    var delegate: GraphCellDelegate?
+    private let containerView: UIView = {
+        let view = UIView()
+        view.backgroundColor = .clear
+        return view
+    }()
+
+    private let textLabel: UILabel = {
+        let label = UILabel()
+        label.textColor = UIColor.red.withAlphaComponent(0.8)
+        label.font = UIFont.systemFont(ofSize: 11, weight: .regular)
+        label.textAlignment = .center
+        return label
+    }()
+
+    private let selectionView: UIView = {
+        let view = UIView()
+        view.backgroundColor = .red
+        view.layer.cornerRadius = 5
+        view.clipsToBounds = true
+        return view
+    }()
+
+    private lazy var prevLineLayer: CAShapeLayer = { getLineLayer() }()
+    private lazy var nextLineLayer: CAShapeLayer = { getLineLayer() }()
+    private lazy var animationLayer1: CAShapeLayer = { getAnimationLayer() }()
+    private lazy var animationLayer2: CAShapeLayer = { getAnimationLayer() }()
+    private lazy var centerYConstraint = selectionView.centerYAnchor.constraint(equalTo: contentView.topAnchor)
+    weak var delegate: GraphCellDelegate?
     
     override var isSelected: Bool {
-        didSet {
-            self.animationLayer1.isHidden = !isSelected
-            self.animationLayer2.isHidden = !isSelected
-            
-            if isSelected {
-                self.startSelectedAnimation()
-            }
-            else {
-                self.stopAnimation()
-            }
-        }
+        didSet { animate(isAnimate: isSelected) }
     }
     
     override init(frame: CGRect) {
         super.init(frame: frame)
-        self.initElements()
-        
-        self.selectButton.addTarget(self, action: #selector(selectButtonTouch(_:)), for: .touchUpInside)
+        setupUI()
     }
     
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
-    private func initElements() {
-        self.containerView.backgroundColor = UIColor.clear
-        self.contentView.addSubview(self.containerView)
-        
-        // prevent isSelected state change when cell touched
-        let tapGesture: UITapGestureRecognizer = UITapGestureRecognizer()
-        self.contentView.addGestureRecognizer(tapGesture)
-        
-        for layer in [self.animationLayer1, self.animationLayer2] {
-            layer.fillColor = UIColor.red.withAlphaComponent(0.5).cgColor
-            layer.isHidden = true
-            self.contentView.layer.addSublayer(layer)
-        }
-        for layer in [self.prevLineLayer, self.nextLineLayer] {
-            layer.strokeColor = self.lineColor.cgColor
-            layer.lineWidth = 1
-            layer.fillColor = UIColor.clear.cgColor
-            self.containerView.layer.addSublayer(layer)
-        }
-        
-        self.markLayer.fillColor = UIColor.red.cgColor
-        self.selectButton.layer.addSublayer(self.markLayer)
-        self.contentView.addSubview(self.selectButton)
-        
-        self.textLabel.textColor = UIColor.red.withAlphaComponent(0.8)
-        self.textLabel.font = UIFont.systemFont(ofSize: 11, weight: .regular)
-        self.textLabel.textAlignment = .center
-        self.contentView.addSubview(self.textLabel)
-        
-        self.contentView.transform = CGAffineTransform(rotationAngle: .pi)
-        self.layoutSubviews()
-    }
-    
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        
-        self.containerView.frame = CGRect(x: 0, y: self.margin, width: self.frame.width, height: self.frame.height - self.margin * 2)
-        
-        self.prevLineLayer.frame = self.containerView.bounds
-        self.setLineLayerPath(layer: self.prevLineLayer, isLeft: false, value: self.prevValue)
-        
-        self.nextLineLayer.frame = self.containerView.bounds
-        self.setLineLayerPath(layer: self.nextLineLayer, isLeft: true, value: self.nextValue)
-        
-        for layer in [self.animationLayer1, self.animationLayer2] {
-            layer.frame = CGRect(x: (self.containerView.frame.width - markWidth)/2, y: self.margin + self.currentValue - markWidth/2, width: markWidth, height: markWidth)
-            layer.path = UIBezierPath(roundedRect: layer.bounds, cornerRadius: layer.frame.height/2).cgPath
-        }
-        
-        let selectionWidth: CGFloat = 50
-        self.selectButton.frame = CGRect(x: (self.containerView.frame.width - selectionWidth)/2, y: self.margin + self.currentValue - selectionWidth/2, width: selectionWidth, height: selectionWidth)
 
-        self.markLayer.frame = self.selectButton.bounds
-        self.markLayer.path = UIBezierPath(roundedRect: CGRect(x: (selectionWidth - self.markWidth)/2, y: (selectionWidth - self.markWidth)/2, width: self.markWidth, height: self.markWidth), cornerRadius: self.markWidth/2).cgPath
-        
-        self.textLabel.frame = CGRect(x: 0, y: self.margin + self.currentValue - 13 - 12, width: self.frame.width, height: 13)
-    }
-    
-    private func setLineLayerPath(layer: CAShapeLayer, isLeft: Bool, value: CGFloat?) {
-        let rect: CGRect = UIScreen.main.bounds
-        
-        layer.frame = self.containerView.bounds
-        let linePath: UIBezierPath = UIBezierPath()
-        let endY: CGFloat = value ?? self.currentValue
-        let endX: CGFloat = layer.frame.width/2 + (layer.frame.width + (value == nil ? rect.width : 0)) * (isLeft ? -1 : 1)
-        linePath.move(to: CGPoint(x: layer.frame.width/2, y: self.currentValue))
-        linePath.addLine(to: CGPoint(x: endX, y: endY))
-        layer.lineDashPattern = value == nil ? [4, 4] : []
-        layer.path = linePath.cgPath
+    private func setupUI() {
+        contentView.layer.addSublayer(animationLayer1)
+        contentView.layer.addSublayer(animationLayer2)
+        contentView.layer.addSublayer(prevLineLayer)
+        contentView.layer.addSublayer(nextLineLayer)
+
+        contentView.addSubview(selectionView)
+        selectionView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            centerYConstraint,
+            selectionView.widthAnchor.constraint(equalToConstant: 10),
+            selectionView.heightAnchor.constraint(equalToConstant: 10),
+            selectionView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor)
+        ])
+
+        contentView.addSubview(textLabel)
+        textLabel.translatesAutoresizingMaskIntoConstraints = false
+        textLabel.bottomAnchor.constraint(equalTo: selectionView.topAnchor, constant: -10).isActive = true
+        textLabel.centerXAnchor.constraint(equalTo: selectionView.centerXAnchor).isActive = true
+
+        contentView.transform = CGAffineTransform(rotationAngle: .pi)
     }
 
-    private func startSelectedAnimation() {
+    private func getLineLayer() -> CAShapeLayer {
+        let layer = CAShapeLayer()
+        layer.strokeColor = UIColor.red.withAlphaComponent(0.2).cgColor
+        layer.lineWidth = 3
+        layer.fillColor = UIColor.clear.cgColor
+        return layer
+    }
+
+    private func getAnimationLayer() -> CAShapeLayer {
+        let layer = CAShapeLayer()
+        layer.fillColor = UIColor.red.withAlphaComponent(0.5).cgColor
+        layer.isHidden = true
+        return layer
+    }
+
+    private func animate(isAnimate: Bool) {
         DispatchQueue.main.async {
-            for (index, layer) in [self.animationLayer1, self.animationLayer2].enumerated() {
-                layer.removeAllAnimations()
-                
-                let animation: CABasicAnimation = CABasicAnimation(keyPath: "transform.scale")
-                animation.toValue = 7
-                animation.duration = 2
-                animation.beginTime = CACurrentMediaTime() + Double(index)
-                animation.isRemovedOnCompletion = true
-                animation.repeatCount = Float.greatestFiniteMagnitude
-                layer.add(animation, forKey: "scaleAnimation")
-                
-                let alphaAnimation: CABasicAnimation = CABasicAnimation(keyPath: "opacity")
-                alphaAnimation.toValue = 0
-                alphaAnimation.duration = 2
-                alphaAnimation.beginTime = CACurrentMediaTime() + Double(index)
-                alphaAnimation.isRemovedOnCompletion = true
-                alphaAnimation.repeatCount = Float.greatestFiniteMagnitude
-                layer.add(alphaAnimation, forKey: "opacityAnimation")
+            self.animationLayer1.isHidden = !self.isSelected
+            self.animationLayer2.isHidden = !self.isSelected
+
+            if isAnimate {
+                for (index, layer) in [self.animationLayer1, self.animationLayer2].enumerated() {
+                    layer.frame = CGRect(
+                        x: self.selectionView.center.x - 5,
+                        y: self.selectionView.center.y - 5,
+                        width: 10,
+                        height: 10
+                    )
+                    layer.path = UIBezierPath(roundedRect: CGRect(origin: .zero, size: .init(width: 10, height: 10)), cornerRadius: 5).cgPath
+                    layer.removeAllAnimations()
+
+                    let animation: CABasicAnimation = CABasicAnimation(keyPath: "transform.scale")
+                    animation.toValue = 7
+                    animation.duration = 2
+                    animation.beginTime = CACurrentMediaTime() + Double(index)
+                    animation.isRemovedOnCompletion = true
+                    animation.repeatCount = Float.greatestFiniteMagnitude
+                    layer.add(animation, forKey: "scaleAnimation")
+
+                    let alphaAnimation: CABasicAnimation = CABasicAnimation(keyPath: "opacity")
+                    alphaAnimation.toValue = 0
+                    alphaAnimation.duration = 2
+                    alphaAnimation.beginTime = CACurrentMediaTime() + Double(index)
+                    alphaAnimation.isRemovedOnCompletion = true
+                    alphaAnimation.repeatCount = Float.greatestFiniteMagnitude
+                    layer.add(alphaAnimation, forKey: "opacityAnimation")
+                }
+            } else {
+                self.animationLayer1.removeAllAnimations()
+                self.animationLayer2.removeAllAnimations()
             }
         }
     }
     
-    private func stopAnimation() {
-        DispatchQueue.main.async {
-            self.animationLayer1.removeAllAnimations()
-            self.animationLayer2.removeAllAnimations()
-        }
+    @objc private func setSelected() {
+        delegate?.didSelected(self)
     }
     
-    @objc private func selectButtonTouch(_ sender: UIButton) {
-        self.delegate?.didSelected(self)
+    func setGraphValue(_ prev: CGFloat?, _ current: CGFloat, _ next: CGFloat?) {
+        layoutIfNeeded()
+        setLine(layer: prevLineLayer, currentValue: current, targetValue: prev)
+        setLine(layer: nextLineLayer, currentValue: current, targetValue: next)
+        centerYConstraint.constant = (1 - current) * frame.height
+        textLabel.text = "\(Int(current * 100))"
     }
-    
-    func setGraphValue(_ prev: CGFloat?, _ current: CGFloat, _ next: CGFloat?, _ text: String) {
-        self.prevValue = prev != nil ? ((1-prev!) * self.containerView.frame.height) : nil
-        self.currentValue = (1-current) * self.containerView.frame.height
-        self.nextValue = next != nil ? ((1-next!) * self.containerView.frame.height) : nil
-        self.textLabel.text = text
-        
-        self.layoutSubviews()
+
+    private func setLine(layer: CAShapeLayer, currentValue: CGFloat, targetValue: CGFloat?) {
+        layer.isHidden = targetValue == nil
+
+        guard let targetValue = targetValue else { return }
+
+        let centerX: CGFloat = frame.width / 2
+        let centerY: CGFloat = (1 - currentValue) * frame.height
+        let targetX: CGFloat = layer == prevLineLayer ? frame.width + frame.width / 2 : 0 - frame.width / 2
+        let targetY: CGFloat = (1 - targetValue) * frame.height
+        let linePath = UIBezierPath()
+        linePath.move(to: CGPoint(x: centerX, y: centerY))
+        linePath.addLine(to: CGPoint(x: targetX, y: targetY))
+        layer.path = linePath.cgPath
     }
     
     override func prepareForReuse() {
         super.prepareForReuse()
-        self.animationLayer1.isHidden = true
-        self.animationLayer2.isHidden = true
+        animationLayer1.isHidden = true
+        animationLayer2.isHidden = true
     }
 }
